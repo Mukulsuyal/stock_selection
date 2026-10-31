@@ -51,6 +51,7 @@ const crashRecoveryRoutes = require('./server/routes/crashRecovery');
 const bestReversalRoutes = require('./server/routes/bestReversal');
 
 const app = express();
+app.set('trust proxy', 1);   // ← yeh line add karo
 app.use(cors());
 app.use(express.json());
 app.use('/api/', apiLimiter);
