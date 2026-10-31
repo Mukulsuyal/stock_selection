@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment variables (bahut important)
+.env
+.env.local
+.env.development
+.env.production
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build / Cache
+dist/
+build/
+.cache/
+coverage/
+
+# Optional
+package-lock.json   # agar aap chahte ho to isko bhi ignore kar sakte ho (lekin mostly rakhte hain)

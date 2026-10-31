@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StockLens — NSE Analysis, Watchlist & Journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css?v=eo-fix-2" />
+<link rel="stylesheet" href="weekrunner.css?v=4" />
+<!-- No external chart library - charts are drawn with plain SVG (see renderSvgLineChart in app.js) so nothing here depends on a CDN being reachable. -->
+</head>
+<body>
+
+<button id="themeToggleBtn" class="theme-toggle" type="button" title="Switch to light mode" aria-label="Toggle light/dark mode"><span class="tt-icon">🌙</span></button>
+
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <h1>📈 StockLens</h1>
+    <p class="subtitle">NSE analysis · watchlist · alerts · trade journal</p>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="login">Login</button>
+      <button class="tab-btn" data-tab="register">Register</button>
+    </div>
+
+    <form id="loginForm" class="auth-form">
+      <input type="email" id="loginEmail" placeholder="Email" required />
+      <input type="password" id="loginPassword" placeholder="Password" required />
+      <button type="submit">Login</button>
+      <p class="muted small" style="margin-top:10px; text-align:center;">
+        <a href="#" id="forgotPasswordLink" style="color:var(--accent, #6ea8fe); text-decoration:none;">Forgot password?</a>
+      </p>
+      <p class="error" id="loginError"></p>
+    </form>
+
+    <form id="registerForm" class="auth-form hidden">
+      <input type="text" id="regName" placeholder="Full name" required />
+      <input type="email" id="regEmail" placeholder="Email" required />
+      <input type="password" id="regPassword" placeholder="Password (min 6 chars)" required />
+      <button type="submit">Create account</button>
+      <p class="error" id="regError"></p>
+    </form>
+
+    <form id="forgotForm" class="auth-form hidden">
+      <p class="muted small" style="margin-bottom:10px;">Enter your registered email. A 6-digit code will appear on this screen — no email needed.</p>
+      <input type="email" id="forgotEmail" placeholder="Email" required />
+      <button type="submit" id="forgotSendBtn">Send reset code</button>
+      <div id="forgotCodeStep" class="hidden" style="margin-top:12px;">
+        <p class="muted small" id="forgotHint" style="margin-bottom:8px;"></p>
+        <input type="text" id="forgotCode" placeholder="6-digit code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" />
+        <input type="password" id="forgotNewPassword" placeholder="New password (min 6 chars)" minlength="6" />
+        <input type="password" id="forgotConfirmPassword" placeholder="Confirm new password" minlength="6" />
+        <button type="button" id="forgotResetBtn">Set new password</button>
+      </div>
+      <p class="muted small" style="margin-top:10px; text-align:center;">
+        <a href="#" id="backToLoginLink" style="color:var(--accent, #6ea8fe); text-decoration:none;">← Back to login</a>
+      </p>
+      <p class="error" id="forgotError"></p>
+      <p class="muted small" id="forgotSuccess" style="color:var(--up, #3dd68c);"></p>
+    </form>
+  </div>
+</div>
+
+<div id="pendingScreen" class="auth-screen hidden">
+  <div class="auth-card" style="text-align:center;">
+    <div id="pendingIcon" style="font-size:40px; margin-bottom:6px;">⏳</div>
+    <h1 id="pendingTitle" style="font-size:22px;">Waiting for approval</h1>
+    <p class="subtitle" id="pendingMessage">Your account has been created — an admin needs to approve it before you can use the app. Check back soon.</p>
+    <button id="pendingRefreshBtn" class="ghost-btn" style="margin-top:10px;">🔄 Check again</button>
+    <button id="pendingLogoutBtn" class="ghost-btn" style="margin-top:8px;">Logout</button>
+  </div>
+</div>
+
+<div id="app" class="app hidden">
+  <div class="app-chrome">
+  <header class="topbar">
+    <div class="brand">📈 StockLens</div>
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Search NSE stock (e.g. RELIANCE, TCS, INFY)..." autocomplete="off" />
+      <div id="searchResults" class="search-results hidden"></div>
+      <div id="searchRecentChips" class="search-chips" title="Searched symbols — cross se hatao"></div>
+    </div>
+    <div class="user-info">
+      <span id="userName"></span>
+      <button id="logoutBtn" class="ghost-btn">Logout</button>
+    </div>
+  </header>
+
+  <nav class="tabs main-tabs">
+    <button class="tab-btn active" data-view="dashboard">Analysis</button>
+    <button class="tab-btn" data-view="watchlist">Watchlist</button>
+    <button class="tab-btn" data-view="alerts">Alerts</button>
+    <button class="tab-btn" data-view="journal">Trade Journal</button>
+    <button class="tab-btn" data-view="screener">Bulk Screener</button>
+    <button class="tab-btn" data-view="import">Import Data</button>
+    <button class="tab-btn" data-view="institutional">Institutional Money</button>
+    <button class="tab-btn" data-view="trackrecord">Track Record</button>
+    <button class="tab-btn" data-view="weekendpicks">Weekend Picks</button>
+    <button class="tab-btn" data-view="modellearning">Model Learning</button>
+    <button class="tab-btn" data-view="ipo">IPO Day</button>
+    <button class="tab-btn" data-view="multibagger">Multi-Bagger</button>
+    <button class="tab-btn" data-view="results-calendar">Earnings</button>
+    <button class="tab-btn" data-view="zero-loss">Zero-Loss +5%</button>
+    <button class="tab-btn" data-view="tomorrow-conviction">Kal ke liye</button>
+    <button class="tab-btn" data-view="sector-ancillary">Sector Invest</button>
+    <button class="tab-btn" data-view="markets">Markets</button>
+    <button class="tab-btn hidden" id="adminTabBtn" data-view="admin">Admin</button>
+    <button class="tab-btn" data-view="fno">F&amp;O Desk</button>
+    <button class="tab-btn" data-view="early-opportunity">Early Opportunity</button>
+    <button class="tab-btn" data-view="week-runner">🚀 Week Runner</button>
+    <button class="tab-btn" data-view="under200">Under ₹200</button>
+    <button class="tab-btn" data-view="settings">Settings</button>
+  </nav>
+  </div><!-- /app-chrome -->
+
+  <main>
+    <section id="view-dashboard" class="view active">
+      <div id="dashboardHome">
+        <div id="dashHero" class="dash-hero card">
+          <div class="dash-hero-main">
+            <div class="dash-avatar" id="dashAvatar">S</div>
+            <div>
+              <div class="dash-greet" id="dashGreet">Welcome</div>
+              <div class="muted small" id="dashGreetSub">Your NSE desk for the session</div>
+            </div>
+          </div>
+          <div class="dash-hero-art" aria-hidden="true">
+            <svg viewBox="0 0 160 100" width="160" height="100">
+              <defs>
+                <linearGradient id="gChart" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#6366f1"/>
+                  <stop offset="100%" stop-color="#38bdf8"/>
+                </linearGradient>
+              </defs>
+              <rect x="8" y="12" width="144" height="76" rx="14" fill="url(#gChart)" opacity="0.12"/>
+              <polyline fill="none" stroke="url(#gChart)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                points="20,70 40,55 55,60 75,40 95,48 115,28 140,35"/>
+              <circle cx="140" cy="35" r="5" fill="#6366f1"/>
+              <circle cx="48" cy="22" r="10" fill="#a78bfa" opacity="0.35"/>
+              <circle cx="120" cy="78" r="8" fill="#38bdf8" opacity="0.3"/>
+            </svg>
+          </div>
+        </div>
+
+        <div id="marketPlaybookBanner" class="card" style="padding:12px; margin-bottom:12px; display:none;"></div>
+
+      <div id="holidayBanner" class="hidden"></div>
+      <div id="marketRegimeBanner" class="card" style="margin-bottom:14px; padding:12px 16px;"></div>
+
+      <div id="bestOfTodayCard" class="card" style="margin-bottom:18px; padding:14px 16px;"></div>
+
+      <div id="todayFlowCard" class="card section-with-art" style="margin-bottom:14px; padding:14px 16px; border-left:3px solid #6ea8fe;">
+        <div class="section-head"><div style="font-weight:700;">🧭 Aaj ka flow</div><div class="section-art-wrap" data-art="flow"></div></div>
+        <div class="muted small" id="todayFlowSteps">10:15–11:30 Early Boom Detector → manage SL/T · EOD book bias · kal carry monitor · baaki research secondary</div>
+        <div id="sitOutBanner" style="display:none; margin-top:8px; padding:10px; border-radius:8px; background:rgba(61,214,140,.12); font-size:13px;"></div>
+        <div id="dataStatusBadge" class="muted small" style="margin-top:8px;"></div>
+      </div>
+      <div id="systemHealthCard" class="card section-with-art" style="margin-bottom:14px; padding:14px 16px;">
+        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">
+          <div class="section-head"><div style="font-weight:700;">🏥 System Health &amp; Truth</div><div class="section-art-wrap" data-art="health"></div></div>
+          <button type="button" id="healthRefreshBtn" class="ghost-btn small">Refresh</button>
+        </div>
+        <div id="systemHealthBox" class="muted small" style="margin-top:8px;">Load…</div>
+      </div>
+      <div id="morningStormCard" class="card section-with-art" style="margin-bottom:18px; padding:14px 16px;">
+        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">
+          <div>
+            <div class="section-head"><div style="font-weight:700; font-size:1.05rem;">⚡ Early Boom Detector — same-day 1–2 names</div><div class="section-art-wrap" data-art="storm"></div></div>
+            <div class="muted small">~10:30–11 window focus: early volume + room left (not already +8–15%). Prime auto 4min · sticky same-day · fund strong · no 1M monster rally. T1 bias target ~70/30 — guarantee nahi.</div>
+          </div>
+          <button type="button" id="morningStormScanBtn" class="ghost-btn small">Scan now</button>
+        </div>
+        <div id="morningStormBox" class="muted small" style="margin-top:10px;">Scan dabao (market hours best).</div>
+      </div>
+      <div id="goldenOpportunityCard" class="card" style="margin-bottom:18px; padding:14px 16px;"></div>
+
+      <div id="marketPulseCard" class="card" style="margin-bottom:18px; padding:14px 16px;"></div>
+
+      <div id="indexBrowser" class="card" style="margin-bottom:18px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div class="tabs" id="indexTabs" style="margin:0;">
+            <button class="tab-btn index-tab-btn" data-index="nifty50">Nifty 50</button>
+            <button class="tab-btn index-tab-btn" data-index="midcap">Midcap</button>
+            <button class="tab-btn index-tab-btn" data-index="smallcap">Smallcap</button>
+          </div>
+          <div id="indexControls" class="hidden" style="display:flex; gap:8px; flex-wrap:wrap;">
+            <select id="indexStreakSelect" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;" title="Net move over 15 trading days - a 1-day bounce in between doesn't reset this, unlike a raw consecutive-day streak">
+              <option value="">All stocks</option>
+              <option value="down_5_15">Fell 5%+ net (15d, bounces OK)</option>
+              <option value="down_10_15">Fell 10%+ net (15d, bounces OK)</option>
+              <option value="down_20_15">Fell 20%+ net (15d, bounces OK)</option>
+              <option value="up_5_15">Rose 5%+ net (15d)</option>
+              <option value="up_10_15">Rose 10%+ net (15d)</option>
+              <option value="up_20_15">Rose 20%+ net (15d)</option>
+            </select>
+            <select id="indexTimeFilterSelect" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;" title="Filters Top Picks &amp; Swing Setups by how long, historically, similar signals on that stock took to reach the target">
+              <option value="any">Any holding period</option>
+              <option value="7d">⚡ Fast — likely within ~7 days</option>
+              <option value="15d">🕐 Medium — likely within ~15 days</option>
+              <option value="30d">🐢 Patient — likely within ~30 days</option>
+              <option value="30d_plus">⏳ Long swing — may take 30+ days</option>
+            </select>
+            <input type="text" id="indexFilterInput" placeholder="Filter by symbol..." style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px; max-width:180px;" />
+          </div>
+        </div>
+        <p id="indexHint" class="muted small" style="margin:10px 0 0;">Select an index above to load its stocks with live verdicts — no search needed. Or use the search bar at the top for any stock.</p>
+        <div id="indexStatus" class="muted small"></div>
+        <div id="topPicksBox"></div>
+        <div id="goldenSetupsBox"></div>
+        <div id="swingSetupsBox"></div>
+        <div id="removedListBox"></div>
+        <div id="indexResults" style="overflow-x:auto;"></div>
+      </div>
+
+      <div id="noSymbol" class="empty-state">
+        <p>Search a stock above (e.g. <b>RELIANCE</b>, <b>TCS</b>, <b>HDFCBANK</b>) — or pick an index tab above — to see live price, factor checklist, and a rule-based long/short/intraday read.</p>
+      </div>
+      </div><!-- /dashboardHome -->
+
+      <div id="symbolView" class="hidden">
+        <button id="backToListBtn" class="ghost-btn" style="margin-bottom:14px;">← Back to home</button>
+        <div class="symbol-header">
+          <div>
+            <h2 id="symTitle">-</h2>
+            <div id="symCompany" class="muted"></div>
+          </div>
+          <div class="price-block">
+            <div id="symPrice" class="price">-</div>
+            <div id="symChange" class="change">-</div>
+            <span id="liveDot" class="live-dot" title="Live via WebSocket"></span>
+            <span id="liveStatusText" class="muted" style="font-size:11px; margin-left:4px;"></span>
+          </div>
+          <div class="symbol-actions">
+            <select id="watchHorizon">
+              <option value="intraday">Intraday</option>
+              <option value="short_term" selected>Short-term</option>
+              <option value="long_term">Long-term</option>
+            </select>
+            <button id="addWatchBtn">+ Watchlist</button>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="chart-head-row">
+              <h3 id="priceChartTitle" style="margin:0;">Price chart</h3>
+              <div id="chartRangeSummary" class="chart-range-summary"></div>
+            </div>
+            <div id="chartHoverReadout" class="chart-hover-readout muted small"></div>
+            <div id="chartRangeBar" class="chart-range-bar">
+              <button type="button" class="chart-range-btn" data-range="1d">1D <span class="live-dot chart-live-dot hidden"></span></button>
+              <button type="button" class="chart-range-btn" data-range="2d">2D</button>
+              <button type="button" class="chart-range-btn" data-range="3d">3D</button>
+              <button type="button" class="chart-range-btn" data-range="4d">4D</button>
+              <button type="button" class="chart-range-btn" data-range="5d">5D</button>
+              <button type="button" class="chart-range-btn" data-range="1w">1W</button>
+              <button type="button" class="chart-range-btn" data-range="15d">15D</button>
+              <button type="button" class="chart-range-btn" data-range="1mo">1M</button>
+              <button type="button" class="chart-range-btn" data-range="3mo">3M</button>
+              <button type="button" class="chart-range-btn" data-range="6mo">6M</button>
+              <button type="button" class="chart-range-btn" data-range="1y">1Y</button>
+              <button type="button" class="chart-range-btn" data-range="3y">3Y</button>
+              <button type="button" class="chart-range-btn" data-range="5y">5Y</button>
+              <button type="button" class="chart-range-btn active" data-range="max">Max</button>
+            </div>
+            <div style="position:relative; height:300px;">
+              <div id="priceChartCanvas"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Multi-Timeframe Analysis</h3>
+            <p class="muted small">Runs the same rule engine on 5m, 15m, 1h, 4h, Daily and Weekly charts — when most agree, that's a stronger case than any single timeframe alone.</p>
+            <button id="runMtfBtn">Run multi-timeframe check</button>
+            <div id="mtfResults" style="margin-top:12px;"></div>
+          </div>
+
+          <div class="card">
+            <h3>Price Levels &amp; Patterns</h3>
+            <div id="weeklyReadNote" class="muted small" style="margin-bottom:10px;"></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <div class="muted small" style="margin-bottom:4px;">Resistance (above price)</div>
+                <div id="resistanceList"></div>
+              </div>
+              <div>
+                <div class="muted small" style="margin-bottom:4px;">Support (below price)</div>
+                <div id="supportList"></div>
+              </div>
+            </div>
+            <div id="candlePatternsBox" style="margin-top:12px;"></div>
+            <div id="breakoutBox" style="margin-top:12px;"></div>
+          </div>
+
+          <div class="card" id="companyStudyCard">
+            <h3>Company Overview</h3>
+            <p class="muted small" style="margin:0 0 8px;">Performance · Fundamentals · Shareholding · Technicals — Groww-style overview.</p>
+            <div id="companyStudyBox"><p class="muted small">Loading study…</p></div>
+          </div>
+
+          <!-- Fundamentals table removed — full metrics live in Company Overview -->
+          <div id="fundamentalsBox" class="hidden" aria-hidden="true"></div>
+
+          <div class="card" id="decisionCardWrapper" style="border-color:var(--accent);">
+            <h3>Final Decision Card</h3>
+            <p class="muted small">Combines technical score, data quality, market regime, R:R and your trading-discipline settings (daily loss limit, cooldown, max trades) into one decision — a strong score alone never forces a trade.</p>
+            <button id="runDecisionBtn">Get Final Decision</button>
+            <div id="decisionResults" style="margin-top:12px;"></div>
+          </div>
+
+          <div class="card">
+            <h3>Suggested Trade Plan</h3>
+            <div id="tradePlanBox"><p class="muted small">Loading...</p></div>
+          </div>
+
+          <div class="card">
+            <h3>Risk &amp; Position Size Calculator</h3>
+            <p class="muted small">Suggests a stop-loss from this stock's own volatility (ATR), then works out how many shares to buy so a single loss never costs more than your chosen % of capital.</p>
+            <form id="riskCalcForm" class="inline-form" style="flex-direction:column; align-items:stretch; gap:10px;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input type="number" id="riskCapital" placeholder="Total capital (₹)" value="100000" style="flex:1; min-width:140px;" />
+                <input type="number" id="riskPercent" placeholder="Risk per trade (%)" value="1" step="0.1" style="flex:1; min-width:120px;" />
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input type="number" id="riskEntry" placeholder="Entry price (₹)" step="0.05" style="flex:1; min-width:140px;" />
+                <input type="number" id="riskStop" placeholder="Stop-loss price (₹)" step="0.05" style="flex:1; min-width:140px;" />
+              </div>
+              <button type="submit" style="align-self:flex-start;">Calculate</button>
+            </form>
+            <div id="riskCalcResult" style="margin-top:12px;"></div>
+          </div>
+
+          <div class="card">
+            <h3>Backtest this stock's rules (real history)</h3>
+            <p class="muted small">Simulates: buy when the score hits "Bullish lean", sell when it drops to "Bearish lean" (or after 60 days). Shows what actually would've happened — not a promise of the future.</p>
+            <button id="runBacktestBtn">Run backtest (up to 5 years)</button>
+            <div id="backtestResults" style="margin-top:14px;"></div>
+          </div>
+
+          <div class="card">
+            <h3>Returns by period</h3>
+            <div id="streakNote" class="muted small" style="margin-bottom:8px;"></div>
+            <table class="indicator-table" id="periodReturnsTable"></table>
+          </div>
+
+          <div class="card">
+            <h3>Relative Strength (vs Nifty 50)</h3>
+            <p class="muted small">Not "did it go up", but "did it beat the index" over the same window — a stock down less than Nifty is quietly strong, one up less than Nifty is quietly weak.</p>
+            <div id="relativeStrengthBox"></div>
+          </div>
+
+          <div class="card">
+            <h3>Why is it moving? — activity &amp; news</h3>
+            <div id="activityNote" class="muted small" style="margin-bottom:10px;"></div>
+            <div id="earningsNote" style="margin-bottom:10px;"></div>
+            <div id="newsList"></div>
+            <p class="disclaimer">Free news feed (Yahoo Finance) — for full institutional (FII/DII/mutual fund) flow data you'd need a paid data provider; volume spike above is the closest free proxy for "who's active in this stock right now".</p>
+          </div>
+
+          <div class="card verdict-card">
+            <h3>Rule-based read</h3>
+            <div id="marketContextNote" class="muted small" style="margin-bottom:8px;"></div>
+            <div id="sectorContextNote" class="muted small" style="margin-bottom:8px;"></div>
+            <div id="verdictBadge" class="verdict-badge">-</div>
+            <div class="muted small">Suggested horizon: <span id="suggestedHorizon">-</span></div>
+            <ul id="factorList" class="factor-list"></ul>
+            <p class="disclaimer">⚠️ Educational technical read only — not financial advice. Always check fundamentals, news, and your own risk appetite.</p>
+          </div>
+
+          <div class="card">
+            <h3>Key indicators</h3>
+            <table class="indicator-table" id="indicatorTable"></table>
+          </div>
+
+          <div class="card">
+            <h3>Set a price alert</h3>
+            <form id="quickAlertForm" class="inline-form">
+              <select id="quickAlertCondition">
+                <option value="above">Alert when price goes above</option>
+                <option value="below">Alert when price goes below</option>
+              </select>
+              <input type="number" step="0.05" id="quickAlertPrice" placeholder="Target price (₹)" required />
+              <button type="submit">Create alert</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3>Log a trade</h3>
+            <form id="quickJournalForm" class="inline-form">
+              <select id="journalSide"><option value="buy">Buy</option><option value="sell">Sell</option></select>
+              <input type="number" step="0.01" id="journalQty" placeholder="Qty" required />
+              <input type="number" step="0.05" id="journalPrice" placeholder="Price (₹)" required />
+              <select id="journalHorizon">
+                <option value="intraday">Intraday</option>
+                <option value="short_term">Short-term</option>
+                <option value="long_term">Long-term</option>
+              </select>
+              <input type="text" id="journalReason" placeholder="Why this trade? (optional)" />
+              <input type="number" step="0.05" id="journalStopLoss" placeholder="Stop-loss ₹ (optional)" />
+              <input type="number" step="0.05" id="journalTarget" placeholder="Target ₹ (optional)" />
+              <button type="submit">Add to journal</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-watchlist" class="view">
+      <h2>Your Watchlist</h2>
+      <p class="muted small">Checked automatically every hour — you'll get an email if any stock's signal changes. Or refresh now for the latest.</p>
+      <button id="refreshWatchlistBtn" class="ghost-btn" style="margin:10px 0;">Refresh now</button>
+      <div id="watchlistGrid" class="list-grid"></div>
+    </section>
+
+    <section id="view-alerts" class="view">
+      <h2>Your Alerts</h2>
+      <div id="alertsGrid" class="list-grid"></div>
+    </section>
+
+    <section id="view-journal" class="view">
+      <h2>Portfolio Overview</h2>
+      <div id="portfolioOverview"></div>
+
+      <h2 style="margin-top:32px;">Position Manager — Hold or Exit?</h2>
+      <p class="muted small">Re-checks every OPEN trade against live price + the same rule engine, right now. This directly answers "abhi neeche hai, hold karu ya nikaalu" for each position.</p>
+      <button id="refreshPositionsBtn" class="ghost-btn" style="margin:10px 0;">Refresh positions</button>
+      <div id="positionsGrid"></div>
+
+      <h2 style="margin-top:32px;">Trade Journal (all trades)</h2>
+      <div id="journalGrid" class="list-grid"></div>
+    </section>
+
+    <section id="view-screener" class="view">
+      <h2>Bulk Screener</h2>
+      <p class="muted small">Paste multiple NSE symbols (comma or new-line separated, max 100). Har ek ke liye verdict, score, period returns aur suggested horizon ek saath mil jayega — decide karo kaunsa lena hai.</p>
+      <form id="screenerForm" class="inline-form" style="margin: 14px 0;">
+        <textarea id="screenerInput" placeholder="RELIANCE, TCS, INFY, HDFCBANK, ITC..." rows="3" style="flex:1; min-width:280px; background:var(--panel-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px; font-family:inherit;"></textarea>
+        <button type="submit">Screen all</button>
+      </form>
+      <div id="screenerStatus" class="muted small"></div>
+      <div id="screenerControls" class="hidden" style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;">
+        <select id="screenerStreakSelect" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;">
+          <option value="">All stocks</option>
+          <option value="down3">Falling 3+ days straight</option>
+          <option value="down4">Falling 4+ days straight</option>
+          <option value="down5">Falling 5+ days straight</option>
+          <option value="up3">Rising 3+ days straight</option>
+          <option value="up5">Rising 5+ days straight</option>
+        </select>
+      </div>
+      <div id="screenerTopPicksBox"></div>
+      <div id="screenerGoldenSetupsBox"></div>
+      <div id="screenerSwingSetupsBox"></div>
+      <div id="screenerResults" style="overflow-x:auto;"></div>
+    </section>
+
+    <section id="view-import" class="view">
+      <h2>Import Your Own Data</h2>
+
+      <div class="card" style="margin-bottom:16px;">
+        <h3>Paste CSV data</h3>
+        <p class="muted small">Agar live data na mile ya tumhare paas apna data hai (broker export, Excel se copy), yaha paste karo. Header row zaroori: <code>date,open,high,low,close,volume</code></p>
+        <form id="csvImportForm" class="inline-form" style="flex-direction:column; align-items:stretch;">
+          <input type="text" id="csvSymbol" placeholder="Symbol name (e.g. RELIANCE)" required />
+          <textarea id="csvData" rows="6" placeholder="date,open,high,low,close,volume
+2026-09-01,2900,2925,2890,2910,1200000
+2026-09-02,2910,2940,2905,2930,1500000" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px; font-family:monospace; font-size:12px;"></textarea>
+          <button type="submit" style="align-self:flex-start;">Analyze pasted data</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Upload screenshot(s)</h3>
+        <p class="muted small" id="screenshotStatusMsg">Checking screenshot analysis availability...</p>
+        <form id="screenshotForm" class="inline-form">
+          <input type="file" id="screenshotInput" accept="image/*" multiple />
+          <button type="submit">Extract &amp; analyze</button>
+        </form>
+      </div>
+
+      <div id="importResults" style="margin-top:20px;"></div>
+    </section>
+
+        <section id="view-institutional" class="view">
+      <div class="inst-header">
+        <div>
+          <h2 style="margin:0;">🏦 Institutional Money Intelligence</h2>
+          <p class="muted small" style="margin:6px 0 0; max-width:720px;">
+            Where FII, DII (incl. MF proxy) cash is entering or leaving — plus NSE bulk-deal names.
+            <b>Daily flow ≠ holdings.</b> Stock-level MF / shareholding marked <b>Not available</b> when free data does not exist.
+          </p>
+        </div>
+        <div class="muted small" id="instFreshness">—</div>
+      </div>
+
+      <div id="instSentimentBar" class="inst-sentiment" style="margin-top:14px;"></div>
+      <div id="instTopCards" class="inst-cards" style="margin-top:12px;"></div>
+      <div id="instPeriodTabs" class="golden-tier-tabs" style="margin-top:12px;"></div>
+
+      <div class="inst-grid-2" style="margin-top:16px;">
+        <div class="card inst-panel">
+          <h3 style="margin:0 0 6px;">💰 Where Money Is Moving</h3>
+          <p class="muted small" title="Daily NSE cash-market FII/DII buy vs sell">FII &amp; DII buy / sell · selected period</p>
+          <div id="instFlowBars"></div>
+        </div>
+        <div class="card inst-panel">
+          <h3 style="margin:0 0 6px;">🏭 Sector Money Flow</h3>
+          <p class="muted small">Bulk-deal net by sector (disclosure-based, not full FII book)</p>
+          <div style="margin-bottom:8px;">
+            <select id="sectorFlowPeriod" class="inst-select">
+              <option value="1D">1D</option><option value="1W">1W</option>
+              <option value="1M" selected>1M</option><option value="3M">3M</option>
+              <option value="6M">6M</option><option value="1Y">1Y</option>
+            </select>
+          </div>
+          <div id="sectorFlowBox"></div>
+        </div>
+      </div>
+
+      <div class="inst-grid-2" style="margin-top:16px;">
+        <div class="card inst-panel">
+          <h3 style="margin:0 0 6px;">🔥 Biggest Institutional Accumulation</h3>
+          <p class="muted small">NSE bulk-deal net buyers (named large trades only)</p>
+          <div id="instAccumBox"></div>
+        </div>
+        <div class="card inst-panel">
+          <h3 style="margin:0 0 6px;">🔻 Biggest Institutional Selling</h3>
+          <p class="muted small">NSE bulk-deal net sellers</p>
+          <div id="instSellBox"></div>
+        </div>
+      </div>
+
+      <div class="card inst-panel" style="margin-top:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <h3 style="margin:0;">📈 Stocks Getting Attention · 📉 Losing Support</h3>
+            <p class="muted small" style="margin:4px 0 0;">Bulk deals · not live MF stock holdings</p>
+          </div>
+          <select id="bulkDealPeriod" class="inst-select">
+            <option value="1D">1D</option><option value="1W">1W</option>
+            <option value="1M" selected>1M</option><option value="3M">3M</option>
+            <option value="6M">6M</option><option value="1Y">1Y</option>
+          </select>
+        </div>
+        <div id="bulkDealBox" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card inst-panel" style="margin-top:16px;">
+        <h3 style="margin:0 0 6px;">Data coverage &amp; honesty</h3>
+        <div id="instHonesty" class="muted small"></div>
+      </div>
+    </section>
+
+
+    <section id="view-zero-loss" class="view">
+      <div class="zl-header">
+        <div>
+          <h2 style="margin:0;">Zero-Loss Protection · +5% Target Engine</h2>
+          <p class="muted small" style="margin:6px 0 0; max-width:760px;">
+            Capital protection first. <b>NO TRADE</b> when path stats cannot support +5% before meaningful downside.
+            Probabilities from <b>this stock's own history</b> — sample size always shown.
+          </p>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" id="zlScanBtn" class="ghost-btn small">Scan top candidates</button>
+        </div>
+      </div>
+      <div id="zlScanStatus" class="muted small" style="margin-top:8px;"></div>
+      <div id="zlScanBox" style="margin-top:12px;"></div>
+
+      <div class="card" style="margin-top:18px; padding:14px;">
+        <h3 style="margin:0 0 8px;">Evaluate one symbol</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <input id="zlSymInput" class="inst-select" placeholder="e.g. RELIANCE" style="min-width:140px;" />
+          <label class="muted small" style="display:flex; align-items:center; gap:4px;">
+            <input type="checkbox" id="zlBtCheck" /> Include backtest
+          </label>
+          <button type="button" id="zlEvalBtn" class="ghost-btn small">Run engine</button>
+        </div>
+        <div id="zlEvalBox" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:18px; padding:14px;">
+        <h3 style="margin:0 0 8px;">Live position defense</h3>
+        <p class="muted small">After you BUY — HOLD / TRAIL / EXIT / WAIT. Never auto-average a loss.</p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <input id="zlDefSym" class="inst-select" placeholder="Symbol" style="min-width:120px;" />
+          <input id="zlDefEntry" class="inst-select" placeholder="Entry price" type="number" step="0.01" style="min-width:120px;" />
+          <button type="button" id="zlDefBtn" class="ghost-btn small">Defend</button>
+        </div>
+        <div id="zlDefBox" style="margin-top:12px;"></div>
+      </div>
+    </section>
+<section id="view-trackrecord" class="view">
+      <h2>Track Record — did the picks actually work?</h2>
+      <p class="muted small">Every day, this app logs its own "Today's Best" / "Momentum" / "Reversal" picks with the price at that moment, then quietly updates each pick's latest price every day after — so you can look back honestly at whether a pick from a week or a month ago actually worked out, instead of only ever seeing today's opinion.</p>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin:14px 0;">
+        <select id="trackRecordPeriod" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;">
+          <option value="">All time (from day 1)</option>
+          <option value="1W">Last 1 Week</option>
+          <option value="15D">Last 15 Days</option>
+          <option value="1M">Last 1 Month</option>
+          <option value="2M">Last 2 Months</option>
+          <option value="3M">Last 3 Months</option>
+          <option value="6M">Last 6 Months</option>
+          <option value="1Y">Last 1 Year</option>
+          <option value="2Y">Last 2 Years</option>
+          <option value="5Y">Last 5 Years</option>
+        </select>
+        <select id="trackRecordCategory" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;">
+          <option value="">All categories</option>
+          <option value="intraday">Intraday</option>
+          <option value="short_term">Short/Mid-term</option>
+          <option value="long_term">Long-term</option>
+          <option value="momentum">Momentum</option>
+          <option value="reversal">Reversal/Bounce</option>
+          <option value="golden_diamond">💎 Golden: Diamond</option>
+          <option value="golden_gold">🥇 Golden: Gold</option>
+          <option value="golden_silver">🥈 Golden: Silver</option>
+          <option value="golden_bronze">🥉 Golden: Bronze</option>
+        </select>
+        <select id="trackRecordStatus" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;">
+          <option value="">All (open + resolved)</option>
+          <option value="open">📈 Currently open only</option>
+          <option value="resolved">✅ Resolved only (target/stop hit)</option>
+        </select>
+      </div>
+
+      <div id="trackRecordSummary" style="margin-bottom:16px;"></div>
+      <div id="trackRecordTable" style="overflow-x:auto;"></div>
+      <div id="trackRecordPagination" style="display:flex; align-items:center; justify-content:center; gap:12px; margin-top:14px;"></div>
+    </section>
+
+    <section id="view-weekendpicks" class="view">
+      <h2>Weekend Picks — best 5–8 stocks for Monday</h2>
+      <p class="muted small">Every weekend, while the market's closed, this scans the FULL Nifty 50 + Midcap + Smallcap universe once and ranks everything by its own historical odds: high probability of profit, negligible probability of loss — based on how this exact stock has actually behaved after similar signals in the past, not a guess. The best handful get frozen here until next weekend.</p>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:14px 0;">
+        <select id="weekendPicksWeek" style="background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px;"></select>
+        <button id="weekendPicksGenerateBtn" class="ghost-btn">🔬 Run fresh research now</button>
+      </div>
+
+      <div id="weekendPicksBox"></div>
+    </section>
+
+    <section id="view-modellearning" class="view">
+      <h2>Model Learning — is your own track record actually being learned from?</h2>
+      <p class="muted small">Every technical signal this app uses (Golden trend, RSI zone, volume spike, MACD, etc.) gets its own real win-rate here, Regime-aware learning from resolved picks (target/SL). NORMAL vs CRISIS separated so crash days do not poison normal stats. Shows Overall / Regime / Expectancy / sample / confidence / why. Small capped nudge only (±0.5) — never overrides Technical + R:R + Market. Not a future profit probability.</p>
+
+      <div style="display:flex; gap:8px; align-items:center; margin:14px 0; flex-wrap:wrap;">
+        <button id="modelLearningRecomputeBtn" class="ghost-btn">🔄 Recompute now</button>
+        <span id="modelLearningMeta" class="muted small"></span>
+      </div>
+
+      <div id="modelLearningBox"></div>
+    </section>
+
+    <section id="view-multibagger" data-note="long-term" class="view">
+      <div class="card" style="padding:16px; margin-bottom:14px;">
+        <h2 style="margin:0 0 6px;">Multi-Bagger Radar</h2>
+        <p class="muted small" style="margin:0 0 10px;">Sirf wahi names jo <b>strict multi-bagger criteria</b> clear karein — 0 bhi ho sakte hain, ya ek se zyada bhi. Hold socho <b>kam se kam 15–30 din+</b> (jab thesis intact ho). Deep scan: technicals, history odds, sector/fundamentals, news, market. <b>Multi-bag guarantee nahi.</b></p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+          <button type="button" id="mbRefreshBtn">🔄 Load latest</button>
+          <button type="button" id="mbGenerateBtn" class="ghost-btn">🔬 Run deep research now</button>
+        </div>
+        <p class="muted small" id="mbStatus" style="margin-top:8px;"></p>
+      </div>
+      <div id="mbResultBox"></div>
+    </section>
+
+        <section id="view-results-calendar" class="view">
+      <div class="rc-header">
+        <div>
+          <h2 style="margin:0;">📊 Earnings Intelligence Center</h2>
+          <p class="muted small" style="margin:6px 0 0; max-width:720px;">
+            Upcoming + <b>already released</b> results. Instant from cache · background refresh.
+            Dates from Yahoo calendar/history — verify with NSE/BSE filings.
+          </p>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button type="button" id="rcLoadBtn" class="ghost-btn small">↻ Soft refresh</button>
+          <button type="button" id="rcForceBtn" class="ghost-btn small">Full rescan</button>
+        </div>
+      </div>
+      <div id="rcStatus" class="muted small" style="margin-top:8px;"></div>
+      <div id="rcProg" class="muted small" style="display:none; margin-top:6px;">
+        <div id="rcProgMsg"></div>
+        <div id="rcProgLogs" style="max-height:80px; overflow:auto; font-size:11px;"></div>
+      </div>
+      <div id="rcTabs" class="golden-tier-tabs" style="margin-top:12px;"></div>
+      <div id="rcFilters" style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <input id="rcSearch" type="search" placeholder="Filter symbol…" class="inst-select" style="min-width:140px;" />
+        <select id="rcVerdictFilter" class="inst-select">
+          <option value="">All verdicts</option>
+          <option>BUY ON PULLBACK</option>
+          <option>HOLD</option>
+          <option>WAIT</option>
+          <option>AVOID</option>
+        </select>
+        <span id="rcFresh" class="muted small"></span>
+      </div>
+      <div id="rcBox" style="margin-top:12px;"><p class="muted small">Open tab to load cache…</p></div>
+    </section>
+
+<section id="view-ipo" class="view">
+      <div id="ipoDetailPage" class="hidden">
+        <button type="button" id="ipoBackBtn" class="ghost-btn" style="margin-bottom:12px;">← Back to IPO list</button>
+        <div id="ipoDetailContent"></div>
+      </div>
+      <div id="ipoHome">
+      <div class="card" style="padding:16px; margin-bottom:14px;">
+        <h2 style="margin:0 0 6px;">🆕 IPO Listing Day Entry</h2>
+        <p class="muted small" style="margin:0 0 12px;">Separate from regular stock picks. Analyses listing-day price, VWAP, volume pressure, premium vs issue, volatility and market backdrop. <b>BUY / WAIT / AVOID</b> — capital protection first. Not a profit guarantee.</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-bottom:12px;">
+          <input type="text" id="ipoSymbol" placeholder="Symbol (e.g. MOBIKWIK)" style="padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2); color:var(--text);" />
+          <input type="number" id="ipoIssuePrice" placeholder="Issue price ₹" step="0.01" style="padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2); color:var(--text);" />
+          <input type="number" id="ipoListingOpen" placeholder="Listing open ₹ (optional)" step="0.01" style="padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2); color:var(--text);" />
+          <input type="date" id="ipoListingDate" title="Listing date" style="padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2); color:var(--text);" />
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+          <button type="button" id="ipoAnalyzeBtn">Analyse listing day</button>
+          <button type="button" id="ipoSaveWatchBtn" class="ghost-btn">💾 Save to IPO watch</button>
+          <button type="button" id="ipoScanWatchBtn" class="ghost-btn">🔍 Scan my IPO watch</button>
+        </div>
+        <p class="muted small" id="ipoStatus"></p>
+        <button type="button" id="ipoRefreshBoardBtn" class="ghost-btn" style="margin-top:6px;">🔄 Refresh today / next listings</button>
+      </div>
+      <div id="ipoBoardBox" style="margin-bottom:14px;"></div>
+      <div id="ipoResultBox" class="hidden"></div>
+      <div id="ipoWatchBox" class="card" style="padding:14px; margin-top:14px;"></div>
+      </div><!-- /ipoHome -->
+    </section>
+
+    <section id="view-sector-ancillary" class="view">
+      <div class="card" style="padding:16px; margin-bottom:14px;">
+        <h2 style="margin:0 0 6px;">🏭 Growing Sector → Ancillary Invest</h2>
+        <p class="muted small" style="margin:0 0 10px;">
+          Pehle <b>growing sectors / themes</b>, phir unke <b>ancillary / value-chain</b> companies
+          (sirf headline OEM nahi). <b>Quality · Growth · Valuation</b> filter.
+          Ye <b>investment</b> hai — trading nahi. Review <b>har 1–2 mahine</b> (cache ~45 din).
+          “100→222 ek saal” extreme case hai, base guarantee nahi.
+        </p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+          <button type="button" id="saLoadBtn">🔄 Load</button>
+          <button type="button" id="saRunBtn" class="ghost-btn">🔬 Force refresh (1–2 min)</button>
+        </div>
+        <p class="muted small" id="saStatus" style="margin-top:8px;"></p>
+      </div>
+      <div id="saResultBox"></div>
+    </section>
+
+    <section id="view-tomorrow-conviction" class="view">
+      <div class="card" style="padding:16px; margin-bottom:14px;">
+        <h2 style="margin:0 0 6px;">Kal ke liye — High Conviction (1–2 max)</h2>
+        <p class="muted small" style="margin:0 0 10px;">
+          Market band hone ke baad: <b>kal</b> ke session ke liye maximum <b>1 ya 2</b> stocks —
+          strict gates (R:R, relative strength, support/setup, volume). Market up/down/sideways
+          teeno ke liye scenario note. <b>0 picks bhi ho sakte hain</b> — weak trade force nahi.
+          Upside guarantee nahi.
+        </p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+          <button type="button" id="tcLoadBtn">🔄 Load</button>
+          <button type="button" id="tcRunBtn" class="ghost-btn">🔬 Abhi scan (post-close)</button>
+          <button type="button" id="tcMorningBtn" class="ghost-btn">☀️ Kal morning re-check</button>
+          <button type="button" id="tcHoldBtn" class="ghost-btn">📌 Hold / Exit coach</button>
+          <button type="button" id="tcLearningBtn" class="ghost-btn">📊 Learning stats</button>
+        </div>
+        <div id="tcMorningBox" style="margin-top:10px;"></div>
+        <div id="tcHoldBox" style="margin-top:8px;"></div>
+        <div id="tcLearningBox" style="margin-top:8px;"></div>
+        <p class="muted small" id="tcStatus" style="margin-top:8px;"></p>
+        <p class="muted small" style="margin-top:4px;">☀️ Morning re-check aur 📌 Hold/Exit <b>sirf pichhle din</b> ke picks pe — aaj shaam ke naye names pe nahi.</p>
+      </div>
+      <div id="tcResultBox"></div>
+    </section>
+
+    <section id="view-markets" class="view">
+      <div class="card" style="padding:16px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; align-items:center;">
+          <div>
+            <h2 style="margin:0 0 4px;">📉 Index Chart Reader</h2>
+            <p class="muted small" style="margin:0;">Nifty / Sensex / Mid / Small — 20–25y history match, supports, bounce vs down lean. Educational only, not advice.</p>
+          </div>
+          <button type="button" id="niftyDeepRefreshBtn" class="ghost-btn">🔄 Refresh</button>
+        </div>
+        <div id="chartReaderIndexBtns" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;"></div>
+        <div id="niftyDeepBox" style="margin-top:12px;"><p class="muted small">Open Markets tab to load…</p></div>
+      </div>
+
+      <h2>Markets — Indices &amp; Commodities</h2>
+      <p class="muted small">Live from the same Yahoo Finance feed as the rest of this app. Click any index/commodity to refresh; the whole screen also auto-refreshes every few minutes during market hours.</p>
+      <button id="marketsRefreshBtn" class="ghost-btn" style="margin:10px 0;">🔄 Refresh now</button>
+
+      <h3 style="margin-top:18px;">🇮🇳 Indian Indices</h3>
+      <div id="indianIndicesBox" class="grid"></div>
+
+      <h3 style="margin-top:22px;">🌍 Global Indices</h3>
+      <div id="globalIndicesBox" class="grid"></div>
+
+      <h3 style="margin-top:22px;">🛢️ Commodities</h3>
+      <div id="commoditiesBox" class="grid"></div>
+    </section>
+
+    <section id="view-admin" class="view">
+      <h2>Admin Panel</h2>
+      <p class="muted small">Approve new sign-ups and choose exactly which tabs each person can see. Admins always have full access, regardless of their own permission grid below.</p>
+      <div id="adminUsersBox" style="margin-top:14px;"></div>
+    </section>
+
+    <section id="view-fno" class="view">
+      <h2>F&amp;O Desk</h2>
+      <p class="muted small">NIFTY · BANKNIFTY · SENSEX — chart, option chain, CE/PE suggestion, paper trade. <b>Scan only on button</b>. DEMO chain jab NSE block ho (paper only).</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:12px 0;">
+        <button type="button" id="fnoScanBtn" class="ghost-btn">Scan F&amp;O setups</button>
+        <span class="muted small" id="fnoStatus"></span>
+      </div>
+      <div id="fnoBox" class="card" style="padding:14px;">Scan dabao jab ready ho — auto load nahi.</div>
+    </section>
+
+    
+    
+    
+    
+    <section id="view-week-runner" class="view">
+      <div class="wr-wrap">
+        <h2 style="margin:4px 0 2px;">🚀 Week Runner — roz ka Best Stock</h2>
+        <div class="wr-muted wr-small">Roz poore market me se sabse achha-placed ek stock dhundhta hai (strong sector + strong stock + abhi tak bhaaga nahi) — aur saath me imandari se batata hai ki ye tareeka past me kitna chala.</div>
+        <div class="wr-top">
+          <label>Total capital (₹)<input id="wrCapital" type="number" min="0" step="1000" placeholder="50000" style="width:150px;"></label>
+          <label>Risk per trade (%)<input id="wrRisk" type="number" min="0.25" max="2" step="0.25" value="0.75" style="width:100px;"></label>
+          <button id="wrScanBtn" class="btn">Scan karo</button>
+        </div>
+        <div class="wr-flow">
+          <div><b>1️⃣ Upar ka hero card padho</b>Aaj ka stock, kyu, aur kitna bharosa.</div><div class="wr-arrow">→</div>
+          <div><b>2️⃣ Plan follow karo</b>Kis din, kis bhav pe, kitne shares, stop-loss.</div><div class="wr-arrow">→</div>
+          <div><b>3️⃣ Neeche diagram dekho</b>Funnel + sector + saboot (band hain, kholne pe dikhte hain).</div>
+        </div>
+        <details class="wr-d"><summary>📘 Detail me samjho (optional)</summary>
+          <div class="wr-small" style="margin-top:8px;">
+            <b>Hero card:</b> roz ek stock chuna jata hai. Uske upar 3 tarah ka label: <span class="wr-chip ok">PAKKA</span> (is tareeke ne untouched test data me paisa banaya), <span class="wr-chip warn">HALKA SANKET</span> (thoda edge, par kismat bhi ho sakta hai → size 0.4×), <span class="wr-chip bad">BINA SABOOT</span> (test me paisa nahi bana → sirf bahut chhota size ya paper).<br>
+            <b>Kab "aaj koi nahi":</b> market crash mode me, jis din #1 stock ka score kamzor ho, result date paas ho, ya stock pehle hi bhaag chuka ho.<br>
+            <b>Kab chalayein:</b> shaam 4 baje ke baad ya subah 9 se pehle. Beech me chalaoge to Live check batata hai stock bhaag to nahi gaya.<br>
+            <b>Ek trade 7–15 trading din ka</b> hota hai (hero me likha hai). Roz naya scan, naya #1. Purana trade apne exit-din tak chalta hai.<br>
+            <b>Paisa:</b> risk% se quantity nikalti hai. Chhota size = chhota nuksan. Bacha paisa cash.<br>
+            <b>Stop-loss ke bina kabhi mat kharido. 90% sure koi nahi hota.</b>
+          </div></details>
+        <div id="wrOut"></div>
+      </div>
+    </section>
+    <section id="view-early-opportunity" class="view">
+      <div class="card" style="padding:16px 18px;">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+          <div>
+            <div style="font-weight:800;font-size:1.12rem;">🔭 Early Opportunity Hub</div>
+            <div class="muted small" style="margin-top:4px;max-width:640px;">
+              Ek jagah: aaj ke best 2–3 reversal picks, crash recovery, aur early scanners.
+              Forced trades nahi — empty = NO TRADE.
+            </div>
+          </div>
+          <button type="button" id="eoHubRefreshBtn" class="small">🔍 Refresh</button>
+        </div>
+        <div id="eoHubSubTabs" class="eo-tabs" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:6px;">
+          <button type="button" class="eo-tab active" data-eo-hub="best-reversal">🎯 Best Reversal (2–3)</button>
+          <button type="button" class="eo-tab" data-eo-hub="crash-recovery">🛡️ Crash Recovery</button>
+          <button type="button" class="eo-tab" data-eo-hub="scanners">📡 Early Scanners</button>
+        </div>
+        <div id="eoHubMeta" class="muted small" style="margin-top:10px;"></div>
+        <!-- Best Reversal panel -->
+        <div id="eoPanel-best-reversal" class="eo-hub-panel">
+          <div id="brMeta" class="muted small" style="margin-top:6px;"></div>
+          <div id="brBoard" style="margin-top:12px;"></div>
+        </div>
+        <!-- Crash Recovery panel -->
+        <div id="eoPanel-crash-recovery" class="eo-hub-panel" style="display:none;">
+          <div id="crMeta" class="muted small" style="margin-top:6px;"></div>
+          <div id="crTabs" class="eo-tabs" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+          <div id="crBoard" style="margin-top:12px;"></div>
+        </div>
+        <!-- Early scanners panel -->
+        <div id="eoPanel-scanners" class="eo-hub-panel" style="display:none;">
+          <div id="eoMeta" class="muted small" style="margin-top:6px;"></div>
+          <div id="eoTabs" class="eo-tabs" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+          <div id="eoBoard" style="margin-top:12px;"></div>
+          <div id="eoAccuracy" class="muted small" style="margin-top:14px;"></div>
+        </div>
+      </div>
+    </section>
+
+<section id="view-under200" class="view">
+      <h2>Under ₹200</h2>
+      <p class="muted small">Price &lt; ₹200. Transparent rank + action signals. Sasta ≠ auto BUY. Expand row for detail · View Analysis for full chart.</p>
+      <div class="u200-toolbar" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:12px 0;">
+        <div class="u200-mode" style="display:flex; gap:4px;">
+          <button type="button" class="ghost-btn small u200-mode-btn active" data-mode="balanced">Balanced</button>
+          <button type="button" class="ghost-btn small u200-mode-btn" data-mode="investment">Investment</button>
+          <button type="button" class="ghost-btn small u200-mode-btn" data-mode="trading">Trading</button>
+        </div>
+        <select id="u200FilterScore" class="ghost-btn small" style="padding:4px 8px;">
+          <option value="0">Score: all</option>
+          <option value="50">Score ≥ 50</option>
+          <option value="60">Score ≥ 60</option>
+          <option value="70">Score ≥ 70</option>
+        </select>
+        <select id="u200FilterSector" class="ghost-btn small" style="padding:4px 8px;"><option value="">Sector: all</option></select>
+        <select id="u200FilterAction" class="ghost-btn small" style="padding:4px 8px;">
+          <option value="">Action: all</option>
+          <option value="BUY CANDIDATE">BUY CANDIDATE</option>
+          <option value="WATCH">WATCH</option>
+          <option value="WAIT">WAIT</option>
+          <option value="AVOID">AVOID</option>
+        </select>
+        <select id="u200FilterRisk" class="ghost-btn small" style="padding:4px 8px;">
+          <option value="">Risk: all</option>
+          <option value="Lower">Lower</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+        </select>
+        <select id="u200Sort" class="ghost-btn small" style="padding:4px 8px;">
+          <option value="score">Sort: score</option>
+          <option value="price">Sort: price</option>
+          <option value="change">Sort: day %</option>
+          <option value="fund">Sort: fund</option>
+          <option value="tech">Sort: tech</option>
+        </select>
+        <button type="button" id="under200PageRefreshBtn" class="ghost-btn small">Refresh</button>
+        <span class="muted small" id="under200PageStatus"></span>
+      </div>
+      <div id="u200Categories" style="display:none; margin-bottom:12px;"></div>
+      <div id="under200PageBox" class="card" style="padding:14px;">Open tab pe Refresh / pehli load.</div>
+    </section>
+
+    <section id="view-settings" class="view">
+      <h2>Trading Rules &amp; Risk Settings</h2>
+      <p class="muted small">These control the Final Decision Card and the No-Trade Engine — e.g. a stock never gets "BUY NOW" if it breaks your minimum R:R, even with a great technical score.</p>
+
+      <div class="card" style="max-width:480px;">
+        <div id="settingsStatus" class="muted small"></div>
+        <form id="settingsForm" style="display:flex; flex-direction:column; gap:12px; margin-top:10px;">
+          <label class="muted small">Capital (₹)<input type="number" id="setCapital" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Risk per trade (%)<input type="number" step="0.1" id="setRiskPerTrade" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Minimum Risk:Reward<input type="number" step="0.1" id="setMinRR" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Max daily loss (%)<input type="number" step="0.1" id="setMaxDailyLoss" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Max trades per day<input type="number" id="setMaxTrades" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Cooldown after a loss (minutes)<input type="number" id="setCooldown" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Max exposure per sector (%)<input type="number" id="setMaxSector" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Max exposure per stock (%)<input type="number" id="setMaxStock" style="width:100%; margin-top:4px;"></label>
+          <label class="muted small">Minimum Data Confidence (%)<input type="number" id="setMinDataConf" style="width:100%; margin-top:4px;"></label>
+          <button type="submit" style="align-self:flex-start;">Save settings</button>
+        </form>
+      </div>
+
+      <div class="card" style="max-width:480px; margin-top:16px;">
+        <h3>Live Data Source (Upstox)</h3>
+        <div id="upstoxStatus" class="muted small">Checking...</div>
+        <p class="muted small" style="margin-top:8px;">Optional — requires your own Upstox trading + developer account. When connected, live quotes try Upstox first and fall back to Yahoo Finance for anything Upstox doesn't have. Set UPSTOX_API_KEY/SECRET/REDIRECT_URI in .env, then click below once a day.</p>
+        <a href="/api/auth/upstox/login" target="_blank"><button type="button">Connect / Reconnect Upstox</button></a>
+      </div>
+
+      <div class="card" style="max-width:560px; margin-top:16px;">
+        <h3>Market Holidays</h3>
+        <p class="muted small">On these dates (plus every Saturday/Sunday, automatic), no new picks/snapshots/alerts get logged — the app just shows last available data so you can plan. Fixed dates (Republic Day, Independence Day, Gandhi Jayanti, Christmas) and NSE's confirmed 2026 festival dates are pre-loaded. Add any more below (festival dates shift yearly — check nseindia.com for other years).</p>
+        <form id="holidayForm" class="inline-form" style="margin:10px 0;">
+          <input type="date" id="holidayDate" required />
+          <input type="text" id="holidayName" placeholder="Holiday name" required />
+          <button type="submit">Add</button>
+        </form>
+        <div id="holidayListBox"><p class="muted small">Loading...</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js?v=buy-cal-1"></script>
+<script src="interactions.js"></script>
+</body>
+</html>
